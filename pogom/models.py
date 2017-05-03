@@ -42,7 +42,7 @@ args = get_args()
 flaskDb = FlaskDB()
 cache = TTLCache(maxsize=100, ttl=60 * 5)
 
-db_schema_version = 18
+db_schema_version = 19
 
 
 class MyRetryDB(RetryOperationalError, PooledMySQLDatabase):
@@ -2884,6 +2884,13 @@ def database_migrate(db, old_ver):
         migrate(
             migrator.add_column('pokemon', 'cp',
                                 SmallIntegerField(null=True))
+        )
+        
+    if old_ver < 19:
+        migrate(
+            migrator.rename_column('gym', 'gym_id', 'id'),
+            migrator.rename_column('gymmember', 'gym_id', 'id'),
+            migrator.rename_column('gymdetails', 'gym_id', 'id')
         )
 
     # Always log that we're done.
