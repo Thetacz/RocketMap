@@ -1025,15 +1025,15 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                             # Check if we already have details on this gym.
                             # Get them if not.
                             try:
-                                record = GymDetails.get(gym_id=gym['gym_id'])
+                                record = GymDetails.get(id=gym['id'])
                             except GymDetails.DoesNotExist as e:
-                                gyms_to_update[gym['gym_id']] = gym
+                                gyms_to_update[gym['id']] = gym
                                 continue
 
                             # If we have a record of this gym already, check if
                             # the gym has been updated since our last update.
                             if record.last_scanned < gym['last_modified']:
-                                gyms_to_update[gym['gym_id']] = gym
+                                gyms_to_update[gym['id']] = gym
                                 continue
                             else:
                                 log.debug(
@@ -1077,7 +1077,7 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                                     gym['latitude'], gym['longitude'],
                                     distance)
                             else:
-                                gym_responses[gym['gym_id']] = response[
+                                gym_responses[gym['id']] = response[
                                     'responses']['GET_GYM_DETAILS']
                             del response
                             # Increment which gym we're on for status messages.
@@ -1177,7 +1177,7 @@ def gym_request(api, position, gym):
                   gym['latitude'], gym['longitude'],
                   calc_distance(position, [gym['latitude'], gym['longitude']]))
         req = api.create_request()
-        req.get_gym_details(gym_id=gym['gym_id'],
+        req.get_gym_details(gym_id=gym['id'],
                             player_latitude=f2i(position[0]),
                             player_longitude=f2i(position[1]),
                             gym_latitude=gym['latitude'],
