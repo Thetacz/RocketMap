@@ -537,7 +537,7 @@ class Gym(BaseModel):
     TEAM_VALOR = 2
     TEAM_INSTINCT = 3
 
-    gym_id = CharField(primary_key=True, max_length=50)
+    id = CharField(primary_key=True, max_length=50)
     team_id = SmallIntegerField()
     guard_pokemon_id = SmallIntegerField()
     gym_points = IntegerField()
@@ -597,45 +597,45 @@ class Gym(BaseModel):
         gc.disable()
 
         gyms = {}
-        gym_ids = []
+        ids = []
         for g in results:
             g['name'] = None
             g['pokemon'] = []
-            gyms[g['gym_id']] = g
-            gym_ids.append(g['gym_id'])
+            gyms[g['id']] = g
+            ids.append(g['id'])
 
-        if len(gym_ids) > 0:
+        if len(ids) > 0:
             pokemon = (GymMember
                        .select(
-                           GymMember.gym_id,
+                           GymMember.id,
                            GymPokemon.cp.alias('pokemon_cp'),
                            GymPokemon.pokemon_id,
                            Trainer.name.alias('trainer_name'),
                            Trainer.level.alias('trainer_level'))
-                       .join(Gym, on=(GymMember.gym_id == Gym.gym_id))
+                       .join(Gym, on=(GymMember.id == Gym.id))
                        .join(GymPokemon, on=(GymMember.pokemon_uid ==
                                              GymPokemon.pokemon_uid))
                        .join(Trainer, on=(GymPokemon.trainer_name ==
                                           Trainer.name))
-                       .where(GymMember.gym_id << gym_ids)
+                       .where(GymMember.id << ids)
                        .where(GymMember.last_scanned > Gym.last_modified)
-                       .order_by(GymMember.gym_id, GymPokemon.cp)
+                       .order_by(GymMember.id, GymPokemon.cp)
                        .distinct()
                        .dicts())
 
             for p in pokemon:
                 p['pokemon_name'] = get_pokemon_name(p['pokemon_id'])
-                gyms[p['gym_id']]['pokemon'].append(p)
+                gyms[p['id']]['pokemon'].append(p)
 
             details = (GymDetails
                        .select(
-                           GymDetails.gym_id,
+                           GymDetails.id,
                            GymDetails.name)
-                       .where(GymDetails.gym_id << gym_ids)
+                       .where(GymDetails.id << ids)
                        .dicts())
 
             for d in details:
-                gyms[d['gym_id']]['name'] = d['name']
+                gyms[d['id']]['name'] = d['name']
 
         # Re-enable the GC.
         gc.enable()
@@ -645,7 +645,7 @@ class Gym(BaseModel):
     @staticmethod
     def get_gym(id):
         result = (Gym
-                  .select(Gym.gym_id,
+                  .select(Gym.id,
                           Gym.team_id,
                           GymDetails.name,
                           GymDetails.description,
@@ -656,8 +656,8 @@ class Gym(BaseModel):
                           Gym.last_modified,
                           Gym.last_scanned)
                   .join(GymDetails, JOIN.LEFT_OUTER,
-                        on=(Gym.gym_id == GymDetails.gym_id))
-                  .where(Gym.gym_id == id)
+                        on=(Gym.id == GymDetails.id))
+                  .where(Gym.id == id)
                   .dicts()
                   .get())
 
@@ -676,11 +676,11 @@ class Gym(BaseModel):
                            GymPokemon.iv_stamina,
                            Trainer.name.alias('trainer_name'),
                            Trainer.level.alias('trainer_level'))
-                   .join(Gym, on=(GymMember.gym_id == Gym.gym_id))
+                   .join(Gym, on=(GymMember.id == Gym.id))
                    .join(GymPokemon,
                          on=(GymMember.pokemon_uid == GymPokemon.pokemon_uid))
                    .join(Trainer, on=(GymPokemon.trainer_name == Trainer.name))
-                   .where(GymMember.gym_id == id)
+                   .where(GymMember.id == id)
                    .where(GymMember.last_scanned > Gym.last_modified)
                    .order_by(GymPokemon.cp.desc())
                    .distinct()
@@ -1677,7 +1677,7 @@ class Versions(flaskDb.Model):
 
 
 class GymMember(BaseModel):
-    gym_id = CharField(index=True)
+    id = CharField(index=True)
     pokemon_uid = CharField(index=True)
     last_scanned = DateTimeField(default=datetime.utcnow, index=True)
 
@@ -1713,7 +1713,7 @@ class Trainer(BaseModel):
 
 
 class GymDetails(BaseModel):
-    gym_id = CharField(primary_key=True, max_length=50)
+    id = CharField(primary_key=True, max_length=50)
     name = CharField()
     description = TextField(null=True, default="")
     url = CharField()
@@ -2231,7 +2231,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     # the information pushed to webhooks.  Similar to above
                     # and previous commits.
                     wh_update_queue.put(('gym', {
-                        'gym_id': b64encode(str(f['id'])),
+                        'id': b64encode(str(f['id'])),
                         'team_id': f.get('owned_by_team', 0),
                         'guard_pokemon_id': f.get('guard_pokemon_id', 0),
                         'gym_points': f.get('gym_points', 0),
@@ -2242,7 +2242,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     }))
 
                 gyms[f['id']] = {
-                    'gym_id': f['id'],
+                    'id': f['id'],
                     'team_id': f.get('owned_by_team', 0),
                     'guard_pokemon_id': f.get('guard_pokemon_id', 0),
                     'gym_points': f.get('gym_points', 0),
@@ -2347,10 +2347,10 @@ def parse_gyms(args, gym_responses, wh_update_queue, db_update_queue):
     i = 0
     for g in gym_responses.values():
         gym_state = g['gym_state']
-        gym_id = gym_state['fort_data']['id']
+        id = gym_state['fort_data']['id']
 
-        gym_details[gym_id] = {
-            'gym_id': gym_id,
+        gym_details[id] = {
+            'id': id,
             'name': g['name'],
             'description': g.get('description'),
             'url': g['urls'][0],
@@ -2358,7 +2358,7 @@ def parse_gyms(args, gym_responses, wh_update_queue, db_update_queue):
 
         if args.webhooks:
             webhook_data = {
-                'id': b64encode(str(gym_id)),
+                'id': b64encode(str(id)),
                 'latitude': gym_state['fort_data']['latitude'],
                 'longitude': gym_state['fort_data']['longitude'],
                 'team': gym_state['fort_data'].get('owned_by_team', 0),
@@ -2370,7 +2370,7 @@ def parse_gyms(args, gym_responses, wh_update_queue, db_update_queue):
 
         for member in gym_state.get('memberships', []):
             gym_members[i] = {
-                'gym_id': gym_id,
+                'id': id,
                 'pokemon_uid': member['pokemon_data']['id'],
             }
 
@@ -2460,7 +2460,7 @@ def parse_gyms(args, gym_responses, wh_update_queue, db_update_queue):
         # Get rid of all the gym members, we're going to insert new records.
         if gym_details:
             DeleteQuery(GymMember).where(
-                GymMember.gym_id << gym_details.keys()).execute()
+                GymMember.id << gym_details.keys()).execute()
 
         # Insert new gym members.
         if gym_members:
