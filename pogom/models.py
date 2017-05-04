@@ -973,6 +973,48 @@ class ScannedLocation(BaseModel):
 
         return ret
 
+    @classmethod
+    def get_cell_to_linked_gyms(cls, cellids, location_change_date):
+
+        # Get all gyms from the hive's cells
+        gym_from_cells = (ScanGym
+                          .select(ScanGym.gym)
+                          .where(ScanGym.scannedlocation << cellids)
+                          .alias('gymcells'))
+        # A new SL (new ones are created when the location changes) or
+        # it can be a cell from another active hive
+        one_gym_scan = (ScanGym
+                        .select(ScanGym.gym,
+                                fn.MAX(ScanGym.scannedlocation).alias(
+                                   'cellid'))
+                        .join(gym_from_cells, on=gym_from_cells.c.gym_id
+                              == ScanGym.gym)
+                        .join(cls, on=(cls.cellid ==
+                                       ScanGym.scannedlocation))
+                        .where(((cls.last_modified >= (location_change_date)) &
+                               (cls.last_modified > (
+                                datetime.utcnow() - timedelta(minutes=60)))) |
+                               (cls.cellid << cellids))
+                        .group_by(ScanGym.gym)
+                        .alias('maxscan'))
+        # As scan locations overlap,gyms can belong to up to 3 locations
+        # This sub-query effectively assigns each SP to exactly one location.
+        query = (Gym
+                 .select(Gym, one_gym_scan.c.cellid)
+                 .join(one_gym_scan, on=(Gym.id ==
+                                         one_gym_scan.c.gym_id))
+                 .where(one_gym_scan.c.cellid << cellids)
+                 .dicts())
+        l = list(query)
+
+        ret = {}
+        for item in l:
+            if item['cellid'] not in ret:
+                ret[item['cellid']] = []
+            ret[item['cellid']].append(item)
+
+        return ret
+
     @staticmethod
     def visible_forts(step_location):
         distance = 0.45
@@ -1451,6 +1493,14 @@ class ScanSpawnPoint(BaseModel):
         primary_key = CompositeKey('spawnpoint', 'scannedlocation')
 
 
+class ScanGym(BaseModel):
+    scannedlocation = ForeignKeyField(ScannedLocation, null=True)
+    gym = ForeignKeyField(Gym, null=True)
+
+    class Meta:
+        primary_key = CompositeKey('gym', 'scannedlocation')
+
+
 class SpawnpointDetectionData(BaseModel):
     id = CharField(primary_key=True, max_length=54)
     # Removed ForeignKeyField since it caused MySQL issues.
@@ -1779,6 +1829,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
     nearby_pokemon = 0
     spawn_points = {}
     scan_spawn_points = {}
+    scan_gyms = {}
     sightings = {}
     new_spawn_points = []
     sp_id_list = []
@@ -2253,6 +2304,12 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                         f['last_modified_timestamp_ms'] / 1000.0),
                 }
 
+                for gym in gyms:
+                    gym = gyms[gym]
+                    scan_gyms[scan_loc['cellid'] + gym['id']] = {
+                        'gym': gym['id'],
+                        'scannedlocation': scan_loc['cellid']}
+
         # Helping out the GC.
         del forts
 
@@ -2312,6 +2369,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
         db_update_queue.put((Pokestop, pokestops))
     if gyms:
         db_update_queue.put((Gym, gyms))
+        db_update_queue.put((ScanGym, scan_gyms))
     if spawn_points:
         db_update_queue.put((SpawnPoint, spawn_points))
         db_update_queue.put((ScanSpawnPoint, scan_spawn_points))
@@ -2617,7 +2675,7 @@ def create_tables(db):
     verify_database_schema(db)
     tables = [Pokemon, Pokestop, Gym, ScannedLocation, GymDetails,
               GymMember, GymPokemon, Trainer, MainWorker, WorkerStatus,
-              SpawnPoint, ScanSpawnPoint, SpawnpointDetectionData,
+              SpawnPoint, ScanGym, ScanSpawnPoint, SpawnpointDetectionData,
               Token, LocationAltitude]
     for table in tables:
         if not table.table_exists():
@@ -2632,7 +2690,7 @@ def create_tables(db):
 def drop_tables(db):
     tables = [Pokemon, Pokestop, Gym, ScannedLocation, Versions,
               GymDetails, GymMember, GymPokemon, Trainer, MainWorker,
-              WorkerStatus, SpawnPoint, ScanSpawnPoint,
+              WorkerStatus, SpawnPoint, ScanGym, ScanSpawnPoint,
               SpawnpointDetectionData, LocationAltitude,
               Token]
     db.connect()
@@ -2885,8 +2943,9 @@ def database_migrate(db, old_ver):
             migrator.add_column('pokemon', 'cp',
                                 SmallIntegerField(null=True))
         )
-        
+
     if old_ver < 19:
+        # still not working, gives "multiple primary keys defined"
         migrate(
             migrator.rename_column('gym', 'gym_id', 'id'),
             migrator.rename_column('gymmember', 'gym_id', 'id'),
