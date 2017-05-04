@@ -2626,6 +2626,15 @@ def create_tables(db):
         else:
             log.debug('Skipping table %s, it already exists.', table.__name__)
 
+    # fixing encoding on future tables
+    if args.db_type == 'mysql':
+        db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
+        for table in tables:
+            cmd_sql = '''ALTER TABLE %s COLLATE=`utf8_general_ci`,
+                        CONVERT TO CHARSET utf8;''' % table
+            db.execute_sql(cmd_sql)
+        db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
+
     db.close()
 
 
