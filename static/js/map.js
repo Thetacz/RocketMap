@@ -810,18 +810,18 @@ function setupGymMarker(item) {
     }
 
     marker.infoWindow = new google.maps.InfoWindow({
-        content: gymLabel(gymTypes[item['team_id']], item['team_id'], item['gym_points'], item['latitude'], item['longitude'], item['last_scanned'], item['last_modified'], item['name'], item['pokemon'], item['gym_id']),
+        content: gymLabel(gymTypes[item['team_id']], item['team_id'], item['gym_points'], item['latitude'], item['longitude'], item['last_scanned'], item['last_modified'], item['name'], item['pokemon'], item['id']),
         disableAutoPan: true
     })
 
     if (Store.get('useGymSidebar')) {
         marker.addListener('click', function () {
             var gymSidebar = document.querySelector('#gym-details')
-            if (gymSidebar.getAttribute('data-id') === item['gym_id'] && gymSidebar.classList.contains('visible')) {
+            if (gymSidebar.getAttribute('data-id') === item['id'] && gymSidebar.classList.contains('visible')) {
                 gymSidebar.classList.remove('visible')
             } else {
-                gymSidebar.setAttribute('data-id', item['gym_id'])
-                showGymDetails(item['gym_id'])
+                gymSidebar.setAttribute('data-id', item['id'])
+                showGymDetails(item['id'])
             }
         })
 
@@ -853,7 +853,7 @@ function updateGymMarker(item, marker) {
         url: 'static/forts/' + Store.get('gymMarkerStyle') + '/' + gymTypes[item['team_id']] + (item['team_id'] !== 0 ? '_' + getGymLevel(item['gym_points']) : '') + '.png',
         scaledSize: new google.maps.Size(48, 48)
     })
-    marker.infoWindow.setContent(gymLabel(gymTypes[item['team_id']], item['team_id'], item['gym_points'], item['latitude'], item['longitude'], item['last_scanned'], item['last_modified'], item['name'], item['pokemon'], item['gym_id']))
+    marker.infoWindow.setContent(gymLabel(gymTypes[item['team_id']], item['team_id'], item['gym_points'], item['latitude'], item['longitude'], item['last_scanned'], item['last_modified'], item['name'], item['pokemon'], item['id']))
     return marker
 }
 
@@ -1319,7 +1319,7 @@ function processGyms(i, item) {
 
     if (Store.get('showOpenGymsOnly') === 1) {
         if (!gymHasOpenSpot(gymLevel, item.pokemon.length)) {
-            removeGymFromMap(item['gym_id'])
+            removeGymFromMap(item['id'])
             return true
         }
     }
@@ -1339,40 +1339,40 @@ function processGyms(i, item) {
         }
 
         if (!gymHasOpenSpot(gymLevel, item.pokemon.length) && (gymPrestige[gymLevel - 1] > closePrestige + item.gym_points || gymLevel === 10)) {
-            removeGymFromMap(item['gym_id'])
+            removeGymFromMap(item['id'])
             return true
         }
     }
 
     if (Store.get('showTeamGymsOnly') && Store.get('showTeamGymsOnly') !== item.team_id) {
-        removeGymFromMap(item['gym_id'])
+        removeGymFromMap(item['id'])
         return true
     }
 
     if (Store.get('showLastUpdatedGymsOnly')) {
         var now = new Date()
         if ((Store.get('showLastUpdatedGymsOnly') * 3600 * 1000) + item.last_scanned < now.getTime()) {
-            removeGymFromMap(item['gym_id'])
+            removeGymFromMap(item['id'])
             return true
         }
     }
 
     if (gymLevel < Store.get('minGymLevel')) {
-        removeGymFromMap(item['gym_id'])
+        removeGymFromMap(item['id'])
         return true
     }
 
     if (gymLevel > Store.get('maxGymLevel')) {
-        removeGymFromMap(item['gym_id'])
+        removeGymFromMap(item['id'])
         return true
     }
 
-    if (item['gym_id'] in mapData.gyms) {
-        item.marker = updateGymMarker(item, mapData.gyms[item['gym_id']].marker)
+    if (item['id'] in mapData.gyms) {
+        item.marker = updateGymMarker(item, mapData.gyms[item['id']].marker)
     } else { // add marker to map and item to dict
         item.marker = setupGymMarker(item)
     }
-    mapData.gyms[item['gym_id']] = item
+    mapData.gyms[item['id']] = item
 }
 
 function processScanned(i, item) {
