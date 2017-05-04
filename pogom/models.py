@@ -2885,17 +2885,17 @@ def database_migrate(db, old_ver):
             migrator.add_column('pokemon', 'cp',
                                 SmallIntegerField(null=True))
         )
-        
+
     if old_ver < 19:
-        # Change charset of gym details table to utf-8 to fix gym 
+        # Change charset of gym details table to utf-8 to fix gym
         # name warning on special characters
         # Change all tables for consistency
         if args.db_type == 'mysql':
             tables = [str(x) for x in db.get_tables()]
             db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
             for table in tables:
-                cmd_sql = '''ALTER TABLE %s COLLATE=`utf8_general_ci`, 
-                            CONVERT TO CHARSET utf8;''' % table  
+                cmd_sql = '''ALTER TABLE %s COLLATE=`utf8_general_ci`,
+                            CONVERT TO CHARSET utf8;''' % table
                 db.execute_sql(cmd_sql)
             db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
 
