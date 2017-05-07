@@ -96,7 +96,7 @@ class Pokemon(BaseModel):
     # We are base64 encoding the ids delivered by the api
     # because they are too big for sqlite to handle.
     encounter_id = CharField(primary_key=True, max_length=50)
-    spawnpoint_id = CharField(index=True)
+    spawnpoint_id = CharField(index=True, max_length=191)
     pokemon_id = SmallIntegerField(index=True)
     latitude = DoubleField()
     longitude = DoubleField()
@@ -1677,8 +1677,8 @@ class Versions(flaskDb.Model):
 
 
 class GymMember(BaseModel):
-    gym_id = CharField(index=True)
-    pokemon_uid = CharField(index=True)
+    gym_id = CharField(index=True, max_length=191)
+    pokemon_uid = CharField(index=True, max_length=191)
     last_scanned = DateTimeField(default=datetime.utcnow, index=True)
 
     class Meta:
@@ -1689,7 +1689,7 @@ class GymPokemon(BaseModel):
     pokemon_uid = CharField(primary_key=True, max_length=50)
     pokemon_id = SmallIntegerField()
     cp = SmallIntegerField()
-    trainer_name = CharField(index=True)
+    trainer_name = CharField(index=True, max_length=191)
     num_upgrades = SmallIntegerField(null=True)
     move_1 = SmallIntegerField(null=True)
     move_2 = SmallIntegerField(null=True)
@@ -2629,10 +2629,14 @@ def create_tables(db):
     # fixing encoding on future tables
     if args.db_type == 'mysql':
         db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
+        cmd_sql = '''
+            SELECT table_name FROM information_schema.tables WHERE
+            table_collation != "utf8mb4_general_ci" AND table_schema = "%s";
+            ''' % args.db_name
+        tables = db.execute_sql(cmd_sql)
         for table in tables:
-            tables = [str(x) for x in db.get_tables()]
-            cmd_sql = '''ALTER TABLE %s COLLATE=`utf8_general_ci`,
-                        CONVERT TO CHARSET utf8;''' % table
+            cmd_sql = '''ALTER TABLE %s COLLATE=utf8mb4_general_ci,
+                        CONVERT TO CHARSET utf8mb4;''' % str(table)
             db.execute_sql(cmd_sql)
         db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
 
@@ -2901,11 +2905,11 @@ def database_migrate(db, old_ver):
         # name warning on special characters
         # Change all tables for consistency
         if args.db_type == 'mysql':
-            tables = [str(x) for x in db.get_tables()]
             db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
+            tables = [str(x) for x in db.get_tables()]            
             for table in tables:
-                cmd_sql = '''ALTER TABLE %s COLLATE=`utf8_general_ci`,
-                            CONVERT TO CHARSET utf8;''' % table
+                cmd_sql = '''ALTER TABLE %s COLLATE=utf8mb4_general_ci,
+                            CONVERT TO CHARSET utf8mb4;''' % table
                 db.execute_sql(cmd_sql)
             db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
 
