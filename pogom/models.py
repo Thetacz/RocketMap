@@ -2906,7 +2906,7 @@ def database_migrate(db, old_ver):
         # Change all tables for consistency
         if args.db_type == 'mysql':
             db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
-            tables = [str(x) for x in db.get_tables()]            
+            tables = [str(x) for x in db.get_tables()]
             for table in tables:
                 cmd_sql = '''ALTER TABLE %s COLLATE=utf8mb4_general_ci,
                             CONVERT TO CHARSET utf8mb4;''' % table
