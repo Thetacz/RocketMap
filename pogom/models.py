@@ -42,7 +42,7 @@ args = get_args()
 flaskDb = FlaskDB()
 cache = TTLCache(maxsize=100, ttl=60 * 5)
 
-db_schema_version = 19
+db_schema_version = 18
 
 
 class MyRetryDB(RetryOperationalError, PooledMySQLDatabase):
@@ -63,7 +63,8 @@ def init_database(app):
             host=args.db_host,
             port=args.db_port,
             max_connections=connections,
-            stale_timeout=300)
+            stale_timeout=300,
+            charset='utf8mb4')
     else:
         log.info('Connecting to local SQLite database')
         db = SqliteExtDatabase(args.db,
@@ -2626,19 +2627,24 @@ def create_tables(db):
         else:
             log.debug('Skipping table %s, it already exists.', table.__name__)
 
-    # fixing encoding on future tables
+    # fixing encoding on present and future tables
     if args.db_type == 'mysql':
-        db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
         cmd_sql = '''
             SELECT table_name FROM information_schema.tables WHERE
-            table_collation != "utf8mb4_general_ci" AND table_schema = "%s";
+            table_collation != "utf8mb4_unicode_ci" AND table_schema = "%s";
             ''' % args.db_name
         tables = db.execute_sql(cmd_sql)
-        for table in tables:
-            cmd_sql = '''ALTER TABLE %s COLLATE=utf8mb4_general_ci,
-                        CONVERT TO CHARSET utf8mb4;''' % str(table)
-            db.execute_sql(cmd_sql)
-        db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
+        if tables.rowcount > 0:
+            log.info('Changing collation and charset on %s tables.',
+                     tables.rowcount)
+            db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
+            for table in tables:
+                log.debug('Changing collation and charset on table %s.',
+                          table[0])
+                cmd_sql = '''ALTER TABLE %s COLLATE=utf8mb4_unicode_ci,
+                            CONVERT TO CHARSET utf8mb4, FORCE;''' % str(table[0])
+                db.execute_sql(cmd_sql)
+            db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
 
     db.close()
 
@@ -2899,19 +2905,6 @@ def database_migrate(db, old_ver):
             migrator.add_column('pokemon', 'cp',
                                 SmallIntegerField(null=True))
         )
-
-    if old_ver < 19:
-        # Change charset of gym details table to utf-8 to fix gym
-        # name warning on special characters
-        # Change all tables for consistency
-        if args.db_type == 'mysql':
-            db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
-            tables = [str(x) for x in db.get_tables()]
-            for table in tables:
-                cmd_sql = '''ALTER TABLE %s COLLATE=utf8mb4_general_ci,
-                            CONVERT TO CHARSET utf8mb4;''' % table
-                db.execute_sql(cmd_sql)
-            db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
 
     # Always log that we're done.
     log.info('Schema upgrade complete.')
