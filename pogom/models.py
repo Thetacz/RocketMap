@@ -2642,7 +2642,7 @@ def create_tables(db):
                 log.debug('Changing collation and charset on table %s.',
                           table[0])
                 cmd_sql = '''ALTER TABLE %s COLLATE=utf8mb4_unicode_ci,
-                            CONVERT TO CHARSET utf8mb4, FORCE;''' % str(table[0])
+                            CONVERT TO CHARSET utf8mb4;''' % str(table[0])
                 db.execute_sql(cmd_sql)
             db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
 
