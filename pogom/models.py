@@ -2641,12 +2641,14 @@ def create_tables(db):
             SELECT table_name FROM information_schema.tables WHERE
             table_collation != "utf8mb4_unicode_ci" AND table_schema = "%s";
             ''' % args.db_name
-        tables = db.execute_sql(cmd_sql)
-        if tables.rowcount > 0:
+        change_tables = db.execute_sql(cmd_sql)
+        if change_tables.rowcount > 0:
             log.info('Changing collation and charset on %s tables.',
-                     tables.rowcount)
+                     change_tables.rowcount)
+            if change_tables.rowcount == len(tables) + 1:
+                log.info('Changing whole database, this might take while.')
             db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
-            for table in tables:
+            for table in change_tables:
                 log.debug('Changing collation and charset on table %s.',
                           table[0])
                 cmd_sql = '''ALTER TABLE %s CONVERT TO CHARACTER SET utf8mb4
