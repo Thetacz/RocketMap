@@ -2623,7 +2623,6 @@ def bulk_upsert(cls, data, db):
 
 def create_tables(db):
     db.connect()
-    verify_database_schema(db)
     tables = [Pokemon, Pokestop, Gym, ScannedLocation, GymDetails,
               GymMember, GymPokemon, Trainer, MainWorker, WorkerStatus,
               SpawnPoint, ScanSpawnPoint, SpawnpointDetectionData,
@@ -2634,32 +2633,6 @@ def create_tables(db):
             db.create_tables([table], safe=True)
         else:
             log.debug('Skipping table %s, it already exists.', table.__name__)
-
-    # fixing encoding on present and future tables
-    if args.db_type == 'mysql':
-        cmd_sql = '''
-            SELECT table_name FROM information_schema.tables WHERE
-            table_collation != "utf8mb4_unicode_ci" AND table_schema = "%s";
-            ''' % args.db_name
-        change_tables = db.execute_sql(cmd_sql)
-
-        if change_tables.rowcount > 0:
-            log.info('Changing collation and charset on %s tables.',
-                     change_tables.rowcount)
-
-            if change_tables.rowcount == len(tables) + 1:
-                log.info('Changing whole database, this might a take while.')
-
-            with db.atomic():
-                db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
-                for table in change_tables:
-                    log.debug('Changing collation and charset on table %s.',
-                              table[0])
-                    cmd_sql = '''ALTER TABLE %s CONVERT TO CHARACTER SET utf8mb4
-                                COLLATE utf8mb4_unicode_ci;''' % str(table[0])
-                    db.execute_sql(cmd_sql)
-                db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
-
     db.close()
 
 
@@ -2680,7 +2653,40 @@ def drop_tables(db):
     db.close()
 
 
+def verify_table_encoding(db):
+    if args.db_type == 'mysql':
+        db.connect()
+
+        cmd_sql = '''
+            SELECT table_name FROM information_schema.tables WHERE
+            table_collation != "utf8mb4_unicode_ci" AND table_schema = "%s";
+            ''' % args.db_name
+        change_tables = db.execute_sql(cmd_sql)
+
+        cmd_sql = "SHOW tables;"
+        tables = db.execute_sql(cmd_sql)
+
+        if change_tables.rowcount > 0:
+            log.info('Changing collation and charset on %s tables.',
+                     change_tables.rowcount)
+
+            if change_tables.rowcount == tables.rowcount:
+                log.info('Changing whole database, this might a take while.')
+
+            with db.atomic():
+                db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
+                for table in change_tables:
+                    log.debug('Changing collation and charset on table %s.',
+                              table[0])
+                    cmd_sql = '''ALTER TABLE %s CONVERT TO CHARACTER SET utf8mb4
+                                COLLATE utf8mb4_unicode_ci;''' % str(table[0])
+                    db.execute_sql(cmd_sql)
+                db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
+        db.close()
+
+
 def verify_database_schema(db):
+    db.connect()
     if not Versions.table_exists():
         db.create_tables([Versions])
 
@@ -2707,6 +2713,7 @@ def verify_database_schema(db):
             log.error('Please upgrade your code base or drop all tables in '
                       'your database.')
             sys.exit(1)
+    db.close()
 
 
 def database_migrate(db, old_ver):
