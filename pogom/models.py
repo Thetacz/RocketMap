@@ -2642,19 +2642,23 @@ def create_tables(db):
             table_collation != "utf8mb4_unicode_ci" AND table_schema = "%s";
             ''' % args.db_name
         change_tables = db.execute_sql(cmd_sql)
+
         if change_tables.rowcount > 0:
             log.info('Changing collation and charset on %s tables.',
                      change_tables.rowcount)
+
             if change_tables.rowcount == len(tables) + 1:
-                log.info('Changing whole database, this might take while.')
-            db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
-            for table in change_tables:
-                log.debug('Changing collation and charset on table %s.',
-                          table[0])
-                cmd_sql = '''ALTER TABLE %s CONVERT TO CHARACTER SET utf8mb4
-                            COLLATE utf8mb4_unicode_ci;''' % str(table[0])
-                db.execute_sql(cmd_sql)
-            db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
+                log.info('Changing whole database, this might a take while.')
+
+            with db.atomic():
+                db.execute_sql('SET FOREIGN_KEY_CHECKS=0;')
+                for table in change_tables:
+                    log.debug('Changing collation and charset on table %s.',
+                              table[0])
+                    cmd_sql = '''ALTER TABLE %s CONVERT TO CHARACTER SET utf8mb4
+                                COLLATE utf8mb4_unicode_ci;''' % str(table[0])
+                    db.execute_sql(cmd_sql)
+                db.execute_sql('SET FOREIGN_KEY_CHECKS=1;')
 
     db.close()
 
