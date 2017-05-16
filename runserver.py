@@ -223,9 +223,9 @@ def main():
         elif os.path.isfile(args.db):
             os.remove(args.db)
 
-    create_tables(db)
-
     verify_database_schema(db)
+
+    create_tables(db)
 
     # fixing encoding on present and future tables
     verify_table_encoding(db)
