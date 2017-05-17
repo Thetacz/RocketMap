@@ -169,20 +169,20 @@ class Account(BaseModel):
 
     @staticmethod
     def get_accounts(number, min_level=1, max_level=40, instance_name=None):
-        if number = 0:
+        if number == 0:
             query = (Account
                      .select(Account.auth_service, Account.username,
                              Account.password, Account.level)
-                     .where((Account.captcha = False) &
+                     .where((Account.captcha == False) &
                             (Account.level >= min_level) &
                             (Account.level <= max_level))
                      .order_by(Account.last_modified.asc())
                      .dicts())
-        elif:
+        else:
             query = (Account
                      .select(Account.auth_service, Account.username,
                              Account.password, Account.level)
-                     .where((Account.captcha = False) &
+                     .where((Account.captcha == False) &
                             (Account.level >= min_level) &
                             (Account.level <= max_level))
                      .order_by(Account.last_modified.asc())
@@ -194,13 +194,12 @@ class Account(BaseModel):
         if accounts_count < number:
             query = (Account
                      .select(Account.auth_service, Account.username,
-                             Account.password, Account.level,
-                             Account.captcha, Account.lures)
-                     .where((Account.captcha = False))
+                             Account.password, Account.level)
+                     #.where((Account.captcha != True))
                      .order_by(Account.last_modified.asc())
                      .limit(number)
                      .dicts())
-            log.warning('Not enough fetched accounts met the requirements.' +
+            log.warning('Not enough fetched accounts met the requirements. ' +
                         'Fetched any, instead.')
 
         # Performance:  disable the garbage collector prior to creating a
@@ -209,6 +208,13 @@ class Account(BaseModel):
 
         db_accounts = []
         for a in query:
+           if (Account
+               .select(Account.in_use)
+               .where((Account.username == a['username']))) != True:
+            (Account(username=a['username'],
+                     in_use=True,
+                     instance_name=instance_name)
+             .save())
             db_accounts.append(a)
 
         # Re-enable the GC.
@@ -252,6 +258,18 @@ class Account(BaseModel):
     def count_encounter_accounts(level=30):
         return Account.select().where((Account.level >= level)).count()
 
+    @staticmethod
+    def heartbeat(account):
+        query = Account(username=account['username'], in_use=True).save()
+
+    @staticmethod
+    def update_captchas(account_captchas):
+        usernames = [a['username'] for a in account_captchas.queue]
+        query = (Account
+                 .update(in_use=False, captcha=True)
+                 .where((Account.username << usernames) &
+                        (Account.captcha == False))
+                 .execute())
 
 class Pokemon(BaseModel):
     # We are base64 encoding the ids delivered by the api
@@ -2466,6 +2484,10 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
     db_update_queue.put((ScannedLocation, {0: scan_loc}))
 
+    if level != account['level']:
+        account['level'] = level
+        db_update_queue.put(
+        (Account, Account.encrypt_accounts([account])))
     if pokemon:
         db_update_queue.put((Pokemon, pokemon))
     if pokestops:
@@ -2676,6 +2698,12 @@ def db_updater(args, q, db):
 def clean_db_loop(args):
     while True:
         try:
+            query = (Account
+                     .update(in_use=None, instance_name=None)
+                     .where((Account.last_modified <
+                             (datetime.utcnow() - timedelta(minutes=1))))
+                     .execute())
+
             query = (MainWorker
                      .delete()
                      .where((MainWorker.last_modified <

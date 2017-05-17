@@ -360,8 +360,10 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     they can be tried again later, but must wait a bit before doing do so
     to prevent accounts from being cycled through too quickly.
     '''
-    accounts = Account.get_lure_accounts(args.workers, 
-                                         instance_name = args.status_name)
+    args.accounts = list(Account.get_accounts(args.workers,
+                                         instance_name = args.status_name))
+    for a in args.accounts:
+        account_queue.put(a)
 
     '''
     Create sets of special case accounts.
@@ -566,6 +568,9 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
                 stats_timer = 0
 
         # Update Overseer statistics
+        if len(account_captchas):
+            Account.update_captchas(account_captchas)
+
         threadStatus['Overseer']['accounts_failed'] = len(account_failures)
         threadStatus['Overseer']['accounts_captcha'] = len(account_captchas)
 
@@ -1141,6 +1146,7 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                 # Delay the desired amount after "scan" completion.
                 delay = scheduler.delay(status['last_scan_date'])
 
+                Account.heartbeat(account)
                 status['message'] += ' Sleeping {}s until {}.'.format(
                     delay,
                     time.strftime(
