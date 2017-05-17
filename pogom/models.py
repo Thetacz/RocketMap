@@ -173,7 +173,8 @@ class Account(BaseModel):
             query = (Account
                      .select(Account.auth_service, Account.username,
                              Account.password, Account.level)
-                     .where((Account.captcha == False) &
+                     .where(((Account.in_use.is_null(True)) | (Account.in_use == False)) &
+                            ((Account.captcha.is_null(True)) | (Account.captcha == False)) &
                             (Account.level >= min_level) &
                             (Account.level <= max_level))
                      .order_by(Account.last_modified.asc())
@@ -182,12 +183,15 @@ class Account(BaseModel):
             query = (Account
                      .select(Account.auth_service, Account.username,
                              Account.password, Account.level)
-                     .where((Account.captcha == False) &
+                     .where(((Account.in_use.is_null(True)) | (Account.in_use == False)) &
+                            ((Account.captcha.is_null(True)) | (Account.captcha == False)) &
                             (Account.level >= min_level) &
                             (Account.level <= max_level))
                      .order_by(Account.last_modified.asc())
                      .limit(number)
                      .dicts())
+
+        print list(query)
 
         accounts_count = len(query)
         # In the case that levels are not yet set and we got none.
@@ -195,12 +199,14 @@ class Account(BaseModel):
             query = (Account
                      .select(Account.auth_service, Account.username,
                              Account.password, Account.level)
-                     #.where((Account.captcha != True))
+                     .where((Account.in_use.is_null(True)) | (Account.in_use == False))
                      .order_by(Account.last_modified.asc())
                      .limit(number)
                      .dicts())
             log.warning('Not enough fetched accounts met the requirements. ' +
                         'Fetched any, instead.')
+
+        print list(query)
 
         # Performance:  disable the garbage collector prior to creating a
         # (potentially) large dict with append().
@@ -259,16 +265,24 @@ class Account(BaseModel):
         return Account.select().where((Account.level >= level)).count()
 
     @staticmethod
-    def heartbeat(account):
-        query = Account(username=account['username'], in_use=True).save()
+    def heartbeat(account, instance_name=None):
+        query = (Account(username=account['username'],
+                        in_use=True,
+                        instance_name=instance_name)
+                 .save())
 
     @staticmethod
-    def update_captchas(account_captchas):
-        usernames = [a['username'] for a in account_captchas.queue]
+    def update_failure(account):
         query = (Account
-                 .update(in_use=False, captcha=True)
-                 .where((Account.username << usernames) &
-                        (Account.captcha == False))
+                 .update(in_use=False)
+                 .where((Account.username == account['username']))
+                 .execute())
+
+    @staticmethod
+    def update_captcha(account, captcha=None):
+        query = (Account
+                 .update(captcha=captcha)
+                 .where((Account.username == account['username']))
                  .execute())
 
 class Pokemon(BaseModel):
@@ -2500,6 +2514,8 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
         if sightings:
             db_update_queue.put((SpawnpointDetectionData, sightings))
 
+    Account.heartbeat(account, instance_name=args.status_name)
+
     if not nearby_pokemon and not wild_pokemon:
         # After parsing the forts, we'll mark this scan as bad due to
         # a possible speed violation.
@@ -2699,9 +2715,15 @@ def clean_db_loop(args):
     while True:
         try:
             query = (Account
-                     .update(in_use=None, instance_name=None)
+                     .update(in_use=None)
                      .where((Account.last_modified <
                              (datetime.utcnow() - timedelta(minutes=1))))
+                     .execute())
+
+            query = (Account
+                     .update(instance_name=None)
+                     .where((Account.last_modified <
+                             (datetime.utcnow() - timedelta(minutes=46))))
                      .execute())
 
             query = (MainWorker
