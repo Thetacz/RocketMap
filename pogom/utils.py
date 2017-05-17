@@ -53,6 +53,10 @@ def get_args():
         auto_env_var_prefix='POGOMAP_')
     parser.add_argument('-cf', '--config',
                         is_config_file=True, help='Set configuration file')
+    parser.add_argument('-rmp', '--rocketmap-password',
+                        help=('RocketMap password for Account ' +
+                              'password encryption.'),
+                        required=True)
     parser.add_argument('-a', '--auth-service', type=str.lower,
                         action='append', default=[],
                         help=('Auth Services, either one for all accounts ' +
@@ -259,6 +263,10 @@ def get_args():
     parser.add_argument('-cd', '--clear-db',
                         help=('Deletes the existing database before ' +
                               'starting the Webserver.'),
+                        action='store_true', default=False)
+    parser.add_argument('-cda', '--clear_db_accounts',
+                        help=('Deletes the existing accounts in the ' +
+                              'database before starting the Scanners.'),
                         action='store_true', default=False)
     parser.add_argument('-np', '--no-pokemon',
                         help=('Disables Pokemon from the map (including ' +
@@ -624,9 +632,13 @@ def get_args():
         # Make the accounts list.
         args.accounts = []
         for i, username in enumerate(args.username):
-            args.accounts.append({'username': username,
-                                  'password': args.password[i],
-                                  'auth_service': args.auth_service[i]})
+            args.accounts.append({
+                'auth_service': args.auth_service[i],
+                'username': username,
+                'password': args.password[i],
+                'level': None,
+                'captcha': None
+            })
 
         # Prepare the L30 accounts for the account sets.
         args.accounts_L30 = []

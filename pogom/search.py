@@ -42,7 +42,7 @@ from pgoapi.utilities import f2i
 from pgoapi import utilities as util
 from pgoapi.hash_server import (HashServer, BadHashRequestException,
                                 HashingOfflineException)
-from .models import (parse_map, GymDetails, parse_gyms, MainWorker,
+from .models import (parse_map, GymDetails, parse_gyms, Account, MainWorker,
                      WorkerStatus, HashKeys)
 from .utils import now, clear_dict_response
 from .transform import get_new_coords, jitter_location
@@ -360,8 +360,8 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     they can be tried again later, but must wait a bit before doing do so
     to prevent accounts from being cycled through too quickly.
     '''
-    for i, account in enumerate(args.accounts):
-        account_queue.put(account)
+    accounts = Account.get_lure_accounts(args.workers, 
+                                         instance_name = args.status_name)
 
     '''
     Create sets of special case accounts.

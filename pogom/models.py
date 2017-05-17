@@ -10,6 +10,8 @@ import gc
 import time
 import geopy
 import math
+import copy
+
 from peewee import (InsertQuery, Check, CompositeKey, ForeignKeyField,
                     SmallIntegerField, IntegerField, CharField, DoubleField,
                     BooleanField, DateTimeField, fn, DeleteQuery, FloatField,
@@ -32,7 +34,7 @@ from .utils import (get_pokemon_name, get_pokemon_rarity, get_pokemon_types,
                     get_move_type, clear_dict_response, calc_pokemon_level)
 from .transform import transform_from_wgs_to_gcj, get_new_coords
 from .customLog import printPokemon
-
+from .crypto import AESCipher
 from .account import (tutorial_pokestop_spin, get_player_level, check_login,
                       setup_api, encounter_pokemon_request)
 
@@ -90,6 +92,165 @@ class BaseModel(flaskDb.Model):
                     transform_from_wgs_to_gcj(
                         result['latitude'], result['longitude'])
         return results
+
+
+class Account(BaseModel):
+
+    auth_service = CharField(max_length=5)
+    username = CharField(primary_key=True, max_length=64)
+    password = CharField(max_length=64)
+    level = SmallIntegerField(index=True, null=True)
+    captcha = BooleanField(index=True, null=True)
+    in_use = BooleanField(index=True, null=True)
+    instance_name = CharField(index=True, null=True, max_length=64)
+    last_modified = DateTimeField(null=True, index=True,
+                                  default=datetime.utcnow)
+
+    @staticmethod
+    def clear_all():
+        query = DeleteQuery(Account).execute()
+        if query > 0:
+            return True
+        else:
+            return False
+
+    @staticmethod  # Use it when you send accounts to the DB
+    def encrypt_accounts(accounts):
+        crypt = AESCipher(args.rocketmap_password)
+        db_accounts = {}
+        for a in accounts:
+            key = a['username']
+            db_accounts[key] = copy.deepcopy(a)
+            db_accounts[key].update({
+                'password': crypt.encrypt(db_accounts[key]['password'])
+            })
+
+        return db_accounts
+
+    @staticmethod  # Use it when you fetch accounts from the DB
+    def decrypt_accounts(db_accounts):
+        crypt = AESCipher(args.rocketmap_password)
+        accounts = []
+        for dba in db_accounts:
+            dba['password'] = crypt.decrypt(dba['password'])
+            accounts.append(dba)
+
+        return accounts
+
+    @staticmethod
+    def push_accounts(new_accounts):
+        new_db_accounts_dict = Account.encrypt_accounts(new_accounts)
+        new_db_accounts = [new_db_accounts_dict[a]
+                           for a in new_db_accounts_dict]
+
+        # Force this instead of db_queue since they need to be written fast
+        Account.insert_many(new_db_accounts).execute()
+
+    @staticmethod
+    def get_all():
+        query = (Account
+                 .select()
+                 .order_by(Account.last_modified.asc())
+                 .dicts())
+
+        # Performance:  disable the garbage collector prior to creating a
+        # (potentially) large dict with append().
+        gc.disable()
+
+        db_accounts = []
+        for a in query:
+            db_accounts.append(a)
+
+        # Re-enable the GC.
+        gc.enable()
+
+        accounts = Account.decrypt_accounts(db_accounts)
+        return accounts
+
+    @staticmethod
+    def get_accounts(number, min_level=1, max_level=40, instance_name=None):
+        if number = 0:
+            query = (Account
+                     .select(Account.auth_service, Account.username,
+                             Account.password, Account.level)
+                     .where((Account.captcha = False) &
+                            (Account.level >= min_level) &
+                            (Account.level <= max_level))
+                     .order_by(Account.last_modified.asc())
+                     .dicts())
+        elif:
+            query = (Account
+                     .select(Account.auth_service, Account.username,
+                             Account.password, Account.level)
+                     .where((Account.captcha = False) &
+                            (Account.level >= min_level) &
+                            (Account.level <= max_level))
+                     .order_by(Account.last_modified.asc())
+                     .limit(number)
+                     .dicts())
+
+        accounts_count = len(query)
+        # In the case that levels are not yet set and we got none.
+        if accounts_count < number:
+            query = (Account
+                     .select(Account.auth_service, Account.username,
+                             Account.password, Account.level,
+                             Account.captcha, Account.lures)
+                     .where((Account.captcha = False))
+                     .order_by(Account.last_modified.asc())
+                     .limit(number)
+                     .dicts())
+            log.warning('Not enough fetched accounts met the requirements.' +
+                        'Fetched any, instead.')
+
+        # Performance:  disable the garbage collector prior to creating a
+        # (potentially) large dict with append().
+        gc.disable()
+
+        db_accounts = []
+        for a in query:
+            db_accounts.append(a)
+
+        # Re-enable the GC.
+        gc.enable()
+
+        accounts = Account.decrypt_accounts(db_accounts)
+        return accounts
+
+    @staticmethod
+    def find_new(accounts):
+        # We don't want to modify the args
+        config_accounts = copy.deepcopy(accounts)
+        usernames = [ca['username'] for ca in config_accounts]
+
+        query = (Account
+                 .select(Account.username)
+                 .where(Account.username << usernames)
+                 .dicts())
+
+        # Performance:  disable the garbage collector prior to creating a
+        # (potentially) large dict with append().
+        gc.disable()
+
+        db_usernames = []
+        for u in query:
+            db_usernames.append(u['username'])
+
+        new_accounts = []
+        for ca in config_accounts:
+            if ca['username'] in db_usernames:
+                continue
+            else:
+                new_accounts.append(ca)
+
+        # Re-enable the GC.
+        gc.enable()
+
+        return new_accounts
+
+    @staticmethod
+    def count_encounter_accounts(level=30):
+        return Account.select().where((Account.level >= level)).count()
 
 
 class Pokemon(BaseModel):
@@ -2621,7 +2782,7 @@ def bulk_upsert(cls, data, db):
 def create_tables(db):
     db.connect()
     verify_database_schema(db)
-    tables = [Pokemon, Pokestop, Gym, ScannedLocation, GymDetails,
+    tables = [Account, Pokemon, Pokestop, Gym, ScannedLocation, GymDetails,
               GymMember, GymPokemon, Trainer, MainWorker, WorkerStatus,
               SpawnPoint, ScanSpawnPoint, SpawnpointDetectionData,
               Token, LocationAltitude, HashKeys]
@@ -2636,7 +2797,7 @@ def create_tables(db):
 
 
 def drop_tables(db):
-    tables = [Pokemon, Pokestop, Gym, ScannedLocation, Versions,
+    tables = [Account,  Pokemon, Pokestop, Gym, ScannedLocation, Versions,
               GymDetails, GymMember, GymPokemon, Trainer, MainWorker,
               WorkerStatus, SpawnPoint, ScanSpawnPoint,
               SpawnpointDetectionData, LocationAltitude,
