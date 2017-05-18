@@ -318,7 +318,7 @@ def main():
         if args.high_lvl_accounts:
             log.info('Adding high level accounts to DB: {}'.format(
                      [a['username'] for a in args.accounts_L30]))
-            Account.insert_accounts(args.high_lvl_accounts)
+            Account.insert_accounts(args.accounts_L30)
 
         Account.reset_instance()  # Free all previous accounts of that instance
 
