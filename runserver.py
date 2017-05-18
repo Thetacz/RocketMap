@@ -314,7 +314,7 @@ def main():
                      [a['username'] for a in new_accounts]))
             Account.insert_accounts(new_accounts)
 
-        Account.reset_instance();  # Free all previous accounts of that instance
+        Account.reset_instance()  # Free all previous accounts of that instance
 
         # Gather the Pokemon!
 

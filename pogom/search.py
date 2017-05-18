@@ -280,7 +280,7 @@ def status_printer(threadStatus, search_items_queue_array, db_updates_queue,
 #  account queue 2 hours after they failed.
 # This allows accounts that were soft banned to be retried after giving
 # them a chance to cool down.
-def account_recycler(args, accounts_queue, account_failures):
+def account_recycler(args, account_failures):
     while True:
         # Run once a minute.
         time.sleep(60)
@@ -301,7 +301,7 @@ def account_recycler(args, accounts_queue, account_failures):
                 log.info('Account {} returning to active duty.'.format(
                     a['account']['username']))
                 account_failures.remove(a)
-                Account.set_free(account)
+                Account.set_free(a)
             else:
                 if 'notified' not in a:
                     log.info((
@@ -365,8 +365,12 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
         for a in args.accounts:
             account_queue.put(a)
 
+        if account_queue.qsize() < args.workers:
+            log.warning('Found only {} of {} requested accounts'
+                        .format(account_queue.qsize(), args.workers))
+
         if account_queue.empty():
-            log.warning('Failed to get accounts. Retrying in 5 s...')
+            log.error('Failed to get accounts. Retrying in 5 s...')
             time.sleep(5)
 
     '''
@@ -419,7 +423,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     # Create account recycler thread.
     log.info('Starting account recycler thread...')
     t = Thread(target=account_recycler, name='account-recycler',
-               args=(args, account_queue, account_failures))
+               args=(args, account_failures))
     t.daemon = True
     t.start()
 
@@ -822,7 +826,7 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                     account_failures.append({'account': account,
                                              'last_fail_time': now(),
                                              'reason': 'failures'})
-                    accounts_queue.put(Account.get_accounts(1))
+                    account_queue.put(Account.get_accounts(1))
                     # Exit this loop to get a new account and have the API
                     # recreated.
                     break
@@ -840,7 +844,7 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                     account_failures.append({'account': account,
                                              'last_fail_time': now(),
                                              'reason': 'empty scans'})
-                    accounts_queue.put(Account.get_accounts(1))
+                    account_queue.put(Account.get_accounts(1))
                     # Exit this loop to get a new account and have the API
                     # recreated.
                     break
@@ -871,7 +875,7 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                         account_failures.append({'account': account,
                                                  'last_fail_time': now(),
                                                  'reason': 'rest interval'})
-                        accounts_queue.put(Account.get_accounts(1))
+                        account_queue.put(Account.get_accounts(1))
                         break
 
                 # Grab the next thing to search (when available).
@@ -1174,7 +1178,7 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
             account_failures.append({'account': account,
                                      'last_fail_time': now(),
                                      'reason': 'exception'})
-            accounts_queue.put(Account.get_accounts(1))
+            account_queue.put(Account.get_accounts(1))
             time.sleep(args.scan_delay)
 
 

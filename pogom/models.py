@@ -170,7 +170,7 @@ class Account(BaseModel):
     def get_accounts(number, min_level=1, max_level=40):
         query = (Account
                  .select()
-                 .where((Account.in_use == False) &
+                 .where((Account.in_use == 0) &
                         (Account.level >= min_level) &
                         (Account.level <= max_level))
                  .order_by(Account.last_modified.asc())
@@ -195,11 +195,12 @@ class Account(BaseModel):
         gc.enable()
 
         accounts = Account.decrypt_accounts(db_accounts)
+        log.debug('Got {} accounts.'.format(len(accounts)))
         return accounts
 
     @staticmethod
     def get_captchad():
-        query = Account.select().where((Account.captcha == True)).dicts()
+        query = Account.select().where((Account.captcha == 1)).dicts()
         return list(query.values())
 
     @staticmethod
@@ -232,28 +233,29 @@ class Account(BaseModel):
 
         # Re-enable the GC.
         gc.enable()
+        log.debug('Found {} new accounts.'.format(len(new_accounts)))
 
         return new_accounts
 
     @staticmethod
     def heartbeat(account):
-        query = (Account(username=account['username'],
-                         in_use=True,
-                         instance_name=args.status_name)
-                 .save())
+        (Account(username=account['username'],
+                 in_use=True,
+                 instance_name=args.status_name)
+         .save())
 
     @staticmethod
     def set_free(account):
-        query = (Account(username=account['username'],
-                         in_use=False,
-                         instance_name=None)
-                 .save())
+        (Account(username=account['username'],
+                 in_use=False,
+                 instance_name=None)
+         .save())
 
     @staticmethod
     def set_captcha(account, captcha=True):
-        query = (Account(username=account['username'],
-                         captcha=captcha)
-                 .save())
+        (Account(username=account['username'],
+                 captcha=captcha)
+         .save())
 
 
 class Pokemon(BaseModel):
@@ -2473,10 +2475,9 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
     # Show the DB this account is still in use
     Account.heartbeat(account)
 
-    if level != account['level']:
+    if level > account['level']:
         account['level'] = level
-        db_update_queue.put(
-        (Account, Account.encrypt_accounts([account])))
+        db_update_queue.put((Account, Account.encrypt_accounts([account])))
     if pokemon:
         db_update_queue.put((Pokemon, pokemon))
     if pokestops:
@@ -2687,9 +2688,10 @@ def db_updater(args, q, db):
 def clean_db_loop(args):
     while True:
         try:
+            # Some quite inactive Accounts in the DB?
             query = (Account
                      .update(in_use=False, instance_name=None)
-                     .where((Account.in_use == True) &
+                     .where((Account.in_use == 1) &
                             (Account.last_modified <
                              (datetime.utcnow() - timedelta(minutes=45))))
                      .execute())
