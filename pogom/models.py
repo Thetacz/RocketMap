@@ -36,7 +36,7 @@ from .transform import transform_from_wgs_to_gcj, get_new_coords
 from .customLog import printPokemon
 from .crypto import AESCipher
 from .account import (tutorial_pokestop_spin, get_player_level, check_login,
-                      setup_api, encounter_pokemon_request)
+                      setup_api, encounter_pokemon_request, equi_rect_distance)
 
 log = logging.getLogger(__name__)
 
@@ -102,22 +102,29 @@ class BaseModel(flaskDb.Model):
         return results
 
 
+# The account DB model provides methods for various tasks in relation to
+# account handling in RM.
 class Account(BaseModel):
     auth_service = CharField(max_length=5)
     username = CharField(primary_key=True, max_length=64)
     password = CharField(max_length=64)
     level = SmallIntegerField(index=True, null=True)
-    captcha = BooleanField(index=True, default=False)
     in_use = BooleanField(index=True, default=False)
     instance_name = CharField(index=True, null=True, max_length=64)
+    last_latitude = DoubleField(null=True)
+    last_longitude = DoubleField(null=True)
+    captcha = BooleanField(index=True, default=False)
+    last_scanned = DateTimeField(null=True, index=True)
     last_modified = DateTimeField(null=True, index=True,
                                   default=datetime.utcnow)
 
+    # Clears all DB accounts, used when --clear-db-accounts
     @staticmethod
     def clear_all():
         return DeleteQuery(Account).execute()
 
-    @staticmethod  # Use it when you send accounts to the DB
+    # Use it when you send accounts to the DB to encrypt them in before
+    @staticmethod
     def encrypt_accounts(accounts):
         crypt = AESCipher(args.rocketmap_password)
         db_accounts = {}
@@ -130,7 +137,8 @@ class Account(BaseModel):
 
         return db_accounts
 
-    @staticmethod  # Use it when you fetch accounts from the DB
+    # Use it when you fetch encrypted accounts from the DB
+    @staticmethod
     def decrypt_accounts(db_accounts):
         crypt = AESCipher(args.rocketmap_password)
         accounts = []
@@ -140,11 +148,13 @@ class Account(BaseModel):
 
         return accounts
 
+    # Inserts accounts to the DB
     @staticmethod
     def insert_accounts(accounts):
         db_accounts = Account.encrypt_accounts(accounts)
         Account.insert_many(db_accounts.values()).execute()
 
+    # Fetches the whole DB table
     @staticmethod
     def get_all():
         query = (Account
@@ -166,6 +176,8 @@ class Account(BaseModel):
         accounts = Account.decrypt_accounts(db_accounts)
         return accounts
 
+    # Gets requested accounts from DB, sorted by lowest level and
+    # oldest last_modified. Mark fetched accounts with in_use and instance_name
     @staticmethod
     def get_accounts(number, min_level=1, max_level=40):
         query = (Account
@@ -173,7 +185,7 @@ class Account(BaseModel):
                  .where((Account.in_use == 0) &
                         (Account.level >= min_level) &
                         (Account.level <= max_level))
-                 .order_by(Account.last_modified.asc())
+                 .order_by(Account.level.asc(), Account.last_modified.asc())
                  .limit(number)
                  .dicts())
 
@@ -198,17 +210,36 @@ class Account(BaseModel):
         log.debug('Got {} accounts.'.format(len(accounts)))
         return accounts
 
+    # Fetches all captcha'd accounts for captcha handling (later)
     @staticmethod
     def get_captchad():
         query = Account.select().where((Account.captcha == 1)).dicts()
         return list(query.values())
 
+    # Fetches a suitable high-level account for the encounter_location
+    @staticmethod
+    def get_encounter_account(min_level, encounter_location):
+        query = (Account
+                 .select()
+                 .where((Account.in_use == 0) &
+                        (Account.captcha == 0) &
+                        (Account.level >= min_level))
+                 .order_by(Account.level.asc(), Account.last_modified.asc())
+                 .dicts())
+
+        for a in query:
+            if Account.get_kph(a, encounter_location) <= args.hlvl_kph:
+                Account(in_use=True, instance_name=args.status_name).save()
+                return Account.decrypt_accounts([a])
+
+    # Resets all instance-flagged accounts to set them free for re-use
     @staticmethod
     def reset_instance():
         return (Account.update(in_use=False, instance_name=None)
                        .where(Account.instance_name == args.status_name)
                        .execute())
 
+    # Compares newly specified accounts from csv with existing DB accounts
     @staticmethod
     def find_new(accounts):
         usernames = [a['username'] for a in accounts]
@@ -237,13 +268,29 @@ class Account(BaseModel):
 
         return new_accounts
 
+    # Updates the DB account after an action to show it's still in use
     @staticmethod
     def heartbeat(account):
         (Account(username=account['username'],
                  in_use=True,
-                 instance_name=args.status_name)
+                 instance_name=args.status_name,
+                 last_latitude=account['last_latitude'],
+                 last_longitude=account['last_longitude'],
+                 last_scanned=account['last_scanned'])
          .save())
 
+    # Updates the (high level) DB account after an encounter and sets it free
+    @staticmethod
+    def release_encounter_account(account):
+        (Account(username=account['username'],
+                 in_use=False,
+                 instance_name=None,
+                 last_latitude=account['last_latitude'],
+                 last_longitude=account['last_longitude'],
+                 last_scanned=account['last_scanned'])
+         .save())
+
+    # Resets instance-flags of accounts to set them free for re-use
     @staticmethod
     def set_free(account):
         (Account(username=account['username'],
@@ -251,11 +298,33 @@ class Account(BaseModel):
                  instance_name=None)
          .save())
 
+    # Sets or resets the captcha flag of an account
     @staticmethod
     def set_captcha(account, captcha=True):
         (Account(username=account['username'],
                  captcha=captcha)
          .save())
+
+    @staticmethod
+    def set_level(account):
+        (Account(username=account['username'],
+                 level=account['level'])
+         .save())
+
+    # Calculates the resulting kph from last_scanned and next location
+    @staticmethod
+    def get_kph(account, next_location):
+        kph = 0
+        if account['last_scanned']:
+            time = datetime.utcnow() - account['last_scanned']
+            if account['last_latitude'] and account['last_longitude']:
+                last_location = (account['last_latitude'],
+                                 account['last_longitude'])
+
+                distance = equi_rect_distance(last_location, next_location)
+            kph = (distance / time) * 3600
+
+        return kph
 
 
 class Pokemon(BaseModel):
@@ -2115,7 +2184,12 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                     hlvl_api = api
                 else:
                     # Get account to use for IV and CP scanning.
+                    '''
                     hlvl_account = account_sets.next('30', scan_location)
+                    '''
+
+                    hlvl_account = Account.get_encounter_account(
+                        min_level=30, encounter_location=scan_location)
 
                 # If we don't have an API object yet, it means we didn't re-use
                 # an old one, so we're using AccountSet.
@@ -2169,6 +2243,13 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                         p['encounter_id'],
                         p['spawn_point_id'],
                         scan_location)
+                    hlvl_account.update({
+                        'last_latitude': step_location[0],
+                        'last_longitude': step_location[1],
+                        'last_scanned': datetime.utcnow()
+                    })
+                    # We don't want to tie an hlvl_account to an instance
+                    Account.release_encounter_account(hlvl_account)
 
                     # Handle errors.
                     if encounter_result:
@@ -2200,14 +2281,17 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                                                 + ' is only level '
                                                 + encounter_level + '.')
 
+                        '''
                         # We're done with the encounter. If it's from an
                         # AccountSet, release account back to the pool.
                         if using_accountset:
                             account_sets.release(hlvl_account)
+                        '''
 
                         # Clear the response for memory management.
                         encounter_result = clear_dict_response(
                             encounter_result)
+                    '''
                     else:
                         # Something happened. Clean up.
 
@@ -2215,6 +2299,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
                         # AccountSet, release account back to the pool.
                         if using_accountset:
                             account_sets.release(hlvl_account)
+                    '''
                 else:
                     log.error('No L30 accounts are available, please'
                               + ' consider adding more. Skipping encounter.')
@@ -2475,9 +2560,9 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
     # Show the DB this account is still in use
     Account.heartbeat(account)
 
-    if level > account['level']:
+    if level != account['level']:
         account['level'] = level
-        db_update_queue.put((Account, Account.encrypt_accounts([account])))
+        Account.set_level(account)
     if pokemon:
         db_update_queue.put((Pokemon, pokemon))
     if pokestops:
@@ -2688,12 +2773,12 @@ def db_updater(args, q, db):
 def clean_db_loop(args):
     while True:
         try:
-            # Some quite inactive Accounts in the DB?
+            # Some quite inactive Accounts in the DB? Reset them.
             query = (Account
                      .update(in_use=False, instance_name=None)
                      .where((Account.in_use == 1) &
                             (Account.last_modified <
-                             (datetime.utcnow() - timedelta(minutes=45))))
+                             (datetime.utcnow() - timedelta(minutes=60))))
                      .execute())
 
             query = (MainWorker

@@ -636,7 +636,11 @@ def get_args():
                 'auth_service': args.auth_service[i],
                 'username': username,
                 'password': args.password[i],
-                'level': 1
+                'level': 1,  # Set a possible default for functionality
+                'last_latitude': None,
+                'last_longitude': None,
+                'last_scanned': None,
+                'captcha': False
             })
 
         # Prepare the L30 accounts for the account sets.
@@ -667,6 +671,10 @@ def get_args():
                         'auth_service': service,
                         'username': username,
                         'password': password,
+                        'level': 30,  # Set a possible default for functionality
+                        'last_latitude': None,
+                        'last_longitude': None,
+                        'last_scanned': None,
                         'captcha': False
                     }
 

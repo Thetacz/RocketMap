@@ -308,11 +308,17 @@ def main():
             log.info('Clearing all accounts in DB.')
             Account.clear_all()
 
+        # We don't want to insert duplicates due to performance
         new_accounts = Account.find_new(args.accounts)
         if new_accounts:
             log.info('Adding new accounts to DB: {}'.format(
                      [a['username'] for a in new_accounts]))
             Account.insert_accounts(new_accounts)
+
+        if args.high_lvl_accounts:
+            log.info('Adding high level accounts to DB: {}'.format(
+                     [a['username'] for a in args.accounts_L30]))
+            Account.insert_accounts(args.high_lvl_accounts)
 
         Account.reset_instance()  # Free all previous accounts of that instance
 

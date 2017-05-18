@@ -377,10 +377,12 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     Create sets of special case accounts.
     Currently limited to L30+ IV/CP scanning.
     '''
+    '''
     account_sets.create_set('30', args.accounts_L30)
 
     # Debug.
     log.info('Added %s accounts to the L30 pool.', len(args.accounts_L30))
+    '''
 
     # Create a list for failed accounts.
     account_failures = []
@@ -963,7 +965,12 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                 # Make the actual request.
                 scan_date = datetime.utcnow()
                 response_dict = map_request(api, step_location, args.no_jitter)
-                status['last_scan_date'] = datetime.utcnow()
+                account.update({
+                    'last_latitude': step_location[0],
+                    'last_longitude': step_location[1],
+                    'last_scanned': datetime.utcnow()
+                })
+                status['last_scan_date'] = account['last_scanned']
 
                 # Record the time and the place that the worker made the
                 # request.
@@ -987,14 +994,9 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                                              account_failures,
                                              account_captchas, whq,
                                              response_dict, step_location)
-                    if captcha is not None and captcha:
-                        # Make another request for the same location
-                        # since the previous one was captcha'd.
-                        scan_date = datetime.utcnow()
-                        response_dict = map_request(api, step_location,
-                                                    args.no_jitter)
-                    elif captcha is not None:
+                    if captcha is not None:
                         account_queue.task_done()
+                        account_queue.put(Account.get_accounts(1))
                         time.sleep(3)
                         break
 
