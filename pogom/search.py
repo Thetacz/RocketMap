@@ -301,7 +301,7 @@ def account_recycler(args, accounts_queue, account_failures):
                 log.info('Account {} returning to active duty.'.format(
                     a['account']['username']))
                 account_failures.remove(a)
-                accounts_queue.put(Account.get_accounts(1, args.status_name))
+                Account.set_free(account)
             else:
                 if 'notified' not in a:
                     log.info((
@@ -361,14 +361,12 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     to prevent accounts from being cycled through too quickly.
     '''
     while account_queue.empty():
-        args.accounts = list(Account.get_accounts(args.workers,
-                                                  instance_name = args.status_name))
+        args.accounts = list(Account.get_accounts(args.workers))
         for a in args.accounts:
             account_queue.put(a)
 
         if account_queue.empty():
-            log.warning('Found no valid accounts on start-up. ' +
-                        'Retrying in 5 seconds...')
+            log.warning('Failed to get accounts. Retrying in 5 s...')
             time.sleep(5)
 
     '''
@@ -412,9 +410,8 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
         t = Thread(target=status_printer,
                    name='status_printer',
                    args=(threadStatus, search_items_queue_array,
-                         db_updates_queue, wh_queue, account_queue,
-                         account_failures, account_captchas,
-                         args.print_status, args.hash_key,
+                         db_updates_queue, wh_queue, account_failures,
+                         account_captchas, args.print_status, args.hash_key,
                          key_scheduler))
         t.daemon = True
         t.start()
@@ -430,7 +427,7 @@ def search_overseer_thread(args, new_location_queue, pause_bit, heartb,
     if args.captcha_solving:
         log.info('Starting captcha overseer thread...')
         t = Thread(target=captcha_overseer_thread, name='captcha-overseer',
-                   args=(args, account_queue, account_captchas, key_scheduler,
+                   args=(args, account_captchas, key_scheduler,
                          wh_queue))
         t.daemon = True
         t.start()
@@ -822,10 +819,10 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                             account['username'],
                             args.max_failures)
                     log.warning(status['message'])
-                    Account.update_failures(account)
                     account_failures.append({'account': account,
                                              'last_fail_time': now(),
                                              'reason': 'failures'})
+                    accounts_queue.put(Account.get_accounts(1))
                     # Exit this loop to get a new account and have the API
                     # recreated.
                     break
@@ -840,10 +837,10 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                         'accounts...').format(account['username'],
                                               args.max_empty)
                     log.warning(status['message'])
-                    Account.update_failures(account)
                     account_failures.append({'account': account,
                                              'last_fail_time': now(),
                                              'reason': 'empty scans'})
+                    accounts_queue.put(Account.get_accounts(1))
                     # Exit this loop to get a new account and have the API
                     # recreated.
                     break
@@ -871,10 +868,10 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                             'Account {} is being rotated out to rest.'.format(
                                 account['username']))
                         log.info(status['message'])
-                        Account.update_failures(account)
                         account_failures.append({'account': account,
                                                  'last_fail_time': now(),
                                                  'reason': 'rest interval'})
+                        accounts_queue.put(Account.get_accounts(1))
                         break
 
                 # Grab the next thing to search (when available).
@@ -989,13 +986,11 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                     if captcha is not None and captcha:
                         # Make another request for the same location
                         # since the previous one was captcha'd.
-                        Account.update_captcha(account, captcha=False)
                         scan_date = datetime.utcnow()
                         response_dict = map_request(api, step_location,
                                                     args.no_jitter)
                     elif captcha is not None:
                         account_queue.task_done()
-                        Account.update_captcha(account, captcha=True)
                         time.sleep(3)
                         break
 
@@ -1176,10 +1171,10 @@ def search_worker_thread(args, account_queue, account_sets, account_failures,
                 'with fresh account. See logs for details.').format(
                     account['username'])
             traceback.print_exc(file=sys.stdout)
-            Account.update_failures(account)
             account_failures.append({'account': account,
                                      'last_fail_time': now(),
                                      'reason': 'exception'})
+            accounts_queue.put(Account.get_accounts(1))
             time.sleep(args.scan_delay)
 
 

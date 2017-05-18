@@ -103,24 +103,19 @@ class BaseModel(flaskDb.Model):
 
 
 class Account(BaseModel):
-
     auth_service = CharField(max_length=5)
     username = CharField(primary_key=True, max_length=64)
     password = CharField(max_length=64)
     level = SmallIntegerField(index=True, null=True)
-    captcha = BooleanField(index=True, null=True)
-    in_use = BooleanField(index=True, null=True)
+    captcha = BooleanField(index=True, default=False)
+    in_use = BooleanField(index=True, default=False)
     instance_name = CharField(index=True, null=True, max_length=64)
     last_modified = DateTimeField(null=True, index=True,
                                   default=datetime.utcnow)
 
     @staticmethod
     def clear_all():
-        query = DeleteQuery(Account).execute()
-        if query > 0:
-            return True
-        else:
-            return False
+        return DeleteQuery(Account).execute()
 
     @staticmethod  # Use it when you send accounts to the DB
     def encrypt_accounts(accounts):
@@ -146,13 +141,9 @@ class Account(BaseModel):
         return accounts
 
     @staticmethod
-    def push_accounts(new_accounts):
-        new_db_accounts_dict = Account.encrypt_accounts(new_accounts)
-        new_db_accounts = [new_db_accounts_dict[a]
-                           for a in new_db_accounts_dict]
-
-        # Force this instead of db_queue since they need to be written fast
-        Account.insert_many(new_db_accounts).execute()
+    def insert_accounts(accounts):
+        db_accounts = Account.encrypt_accounts(accounts)
+        Account.insert_many(db_accounts.values()).execute()
 
     @staticmethod
     def get_all():
@@ -176,45 +167,21 @@ class Account(BaseModel):
         return accounts
 
     @staticmethod
-    def get_accounts(number, min_level=1, max_level=40, instance_name=None):
-        if number == 0:
-            query = (Account
-                     .select(Account.auth_service, Account.username,
-                             Account.password, Account.level)
-                     .where(((Account.in_use.is_null(True)) | (Account.in_use == False)) &
-                            ((Account.captcha.is_null(True)) | (Account.captcha == False)) &
-                            (Account.level >= min_level) &
-                            (Account.level <= max_level))
-                     .order_by(Account.last_modified.asc())
-                     .dicts())
-        else:
-            query = (Account
-                     .select(Account.auth_service, Account.username,
-                             Account.password, Account.level)
-                     .where(((Account.in_use.is_null(True)) | (Account.in_use == False)) &
-                            ((Account.captcha.is_null(True)) | (Account.captcha == False)) &
-                            (Account.level >= min_level) &
-                            (Account.level <= max_level))
-                     .order_by(Account.last_modified.asc())
-                     .limit(number)
-                     .dicts())
+    def get_accounts(number, min_level=1, max_level=40):
+        query = (Account
+                 .select()
+                 .where((Account.in_use == False) &
+                        (Account.level >= min_level) &
+                        (Account.level <= max_level))
+                 .order_by(Account.last_modified.asc())
+                 .limit(number)
+                 .dicts())
 
-        print list(query)
-
-        accounts_count = len(query)
-        # In the case that levels are not yet set and we got none.
-        if accounts_count < number:
-            query = (Account
-                     .select(Account.auth_service, Account.username,
-                             Account.password, Account.level)
-                     .where((Account.in_use.is_null(True)) | (Account.in_use == False))
-                     .order_by(Account.last_modified.asc())
-                     .limit(number)
-                     .dicts())
-            log.warning('Not enough fetched accounts met the requirements. ' +
-                        'Fetched any, instead.')
-
-        print list(query)
+        # Directly set accounts to in_use with the instance_name
+        usernames = [dba['username'] for dba in query]
+        (Account.update(in_use=True, instance_name=args.status_name)
+                .where((Account.username << usernames))
+                .execute())
 
         # Performance:  disable the garbage collector prior to creating a
         # (potentially) large dict with append().
@@ -222,13 +189,6 @@ class Account(BaseModel):
 
         db_accounts = []
         for a in query:
-           if (Account
-               .select(Account.in_use)
-               .where((Account.username == a['username']))) != True:
-            (Account(username=a['username'],
-                     in_use=True,
-                     instance_name=instance_name)
-             .save())
             db_accounts.append(a)
 
         # Re-enable the GC.
@@ -238,30 +198,37 @@ class Account(BaseModel):
         return accounts
 
     @staticmethod
+    def get_captchad():
+        query = Account.select().where((Account.captcha == True)).dicts()
+        return list(query.values())
+
+    @staticmethod
+    def reset_instance():
+        return (Account.update(in_use=False, instance_name=None)
+                       .where(Account.instance_name == args.status_name)
+                       .execute())
+
+    @staticmethod
     def find_new(accounts):
-        # We don't want to modify the args
-        config_accounts = copy.deepcopy(accounts)
-        usernames = [ca['username'] for ca in config_accounts]
+        usernames = [a['username'] for a in accounts]
 
         query = (Account
                  .select(Account.username)
                  .where(Account.username << usernames)
                  .dicts())
 
+        db_usernames = [dbu['username'] for dbu in query]
+
         # Performance:  disable the garbage collector prior to creating a
         # (potentially) large dict with append().
         gc.disable()
 
-        db_usernames = []
-        for u in query:
-            db_usernames.append(u['username'])
-
         new_accounts = []
-        for ca in config_accounts:
-            if ca['username'] in db_usernames:
+        for ca in accounts:
+            if ca['username'] in db_usernames:  # Not new. Next one.
                 continue
-            else:
-                new_accounts.append(ca)
+
+            new_accounts.append(ca)
 
         # Re-enable the GC.
         gc.enable()
@@ -269,29 +236,25 @@ class Account(BaseModel):
         return new_accounts
 
     @staticmethod
-    def count_encounter_accounts(level=30):
-        return Account.select().where((Account.level >= level)).count()
-
-    @staticmethod
-    def heartbeat(account, instance_name=None):
+    def heartbeat(account):
         query = (Account(username=account['username'],
-                        in_use=True,
-                        instance_name=instance_name)
+                         in_use=True,
+                         instance_name=args.status_name)
                  .save())
 
     @staticmethod
-    def update_failure(account):
-        query = (Account
-                 .update(in_use=False)
-                 .where((Account.username == account['username']))
-                 .execute())
+    def set_free(account):
+        query = (Account(username=account['username'],
+                         in_use=False,
+                         instance_name=None)
+                 .save())
 
     @staticmethod
-    def update_captcha(account, captcha=None):
-        query = (Account
-                 .update(captcha=captcha)
-                 .where((Account.username == account['username']))
-                 .execute())
+    def set_captcha(account, captcha=True):
+        query = (Account(username=account['username'],
+                         captcha=captcha)
+                 .save())
+
 
 class Pokemon(BaseModel):
     # We are base64 encoding the ids delivered by the api
@@ -2507,6 +2470,9 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
     db_update_queue.put((ScannedLocation, {0: scan_loc}))
 
+    # Show the DB this account is still in use
+    Account.heartbeat(account)
+
     if level != account['level']:
         account['level'] = level
         db_update_queue.put(
@@ -2522,8 +2488,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
         db_update_queue.put((ScanSpawnPoint, scan_spawn_points))
         if sightings:
             db_update_queue.put((SpawnpointDetectionData, sightings))
-
-    Account.heartbeat(account, instance_name=args.status_name)
 
     if not nearby_pokemon and not wild_pokemon:
         # After parsing the forts, we'll mark this scan as bad due to
@@ -2724,15 +2688,10 @@ def clean_db_loop(args):
     while True:
         try:
             query = (Account
-                     .update(in_use=None)
-                     .where((Account.last_modified <
-                             (datetime.utcnow() - timedelta(minutes=1))))
-                     .execute())
-
-            query = (Account
-                     .update(instance_name=None)
-                     .where((Account.last_modified <
-                             (datetime.utcnow() - timedelta(minutes=46))))
+                     .update(in_use=False, instance_name=None)
+                     .where((Account.in_use == True) &
+                            (Account.last_modified <
+                             (datetime.utcnow() - timedelta(minutes=45))))
                      .execute())
 
             query = (MainWorker

@@ -305,16 +305,16 @@ def main():
 
         # Clear all DB accounts on start-up if requested
         if args.clear_db_accounts:
-            if Account.clear_all():
-                log.info('Cleared all accounts in DB.')
-            else:
-                log.warning('No DB accounts to clear.')
+            log.info('Clearing all accounts in DB.')
+            Account.clear_all()
 
         new_accounts = Account.find_new(args.accounts)
         if new_accounts:
             log.info('Adding new accounts to DB: {}'.format(
                      [a['username'] for a in new_accounts]))
-            Account.push_accounts(new_accounts)
+            Account.insert_accounts(new_accounts)
+
+        Account.reset_instance();  # Free all previous accounts of that instance
 
         # Gather the Pokemon!
 

@@ -636,8 +636,7 @@ def get_args():
                 'auth_service': args.auth_service[i],
                 'username': username,
                 'password': args.password[i],
-                'level': None,
-                'captcha': None
+                'level': 1
             })
 
         # Prepare the L30 accounts for the account sets.
