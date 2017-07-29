@@ -646,7 +646,8 @@ def get_stats_message(threadStatus, search_items_queue_array, db_updates_queue,
     message += (
         'Total active: {}  |  Success: {} ({:.1f}/hr) | ' +
         'Fails: {} ({:.1f}/hr) | Empties: {} ({:.1f}/hr) | ' +
-        'Skips {} ({:.1f}/hr) | Captchas: {} ({:.1f}/hr)|${:.5f}/hr|${:.3f}/mo' +
+        'Skips {} ({:.1f}/hr) | ' +
+        'Captchas: {} ({:.1f}/hr)|${:.5f}/hr|${:.3f}/mo | ' +
         'Nonrares {} ({:.1f}/hr)'
     ).format(overseer['active_accounts'], overseer['success_total'], sph,
              overseer['fail_total'], fph, overseer['empty_total'], eph,

@@ -46,6 +46,7 @@ cache = TTLCache(maxsize=100, ttl=60 * 5)
 
 db_schema_version = 20
 
+
 class Shadowbanned(Exception):
     def __init__(self, account, missed_ids=[], final=False):
         self.account = account
