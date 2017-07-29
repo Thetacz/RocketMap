@@ -644,7 +644,6 @@ def parse_get_player(account, api_response):
 def parse_inventory(account, api_response):
     inventory = api_response['responses']['GET_INVENTORY']
     parsed_items = 0
-    item_count = 0
     parsed_pokemons = 0
     parsed_eggs = 0
     parsed_incubators = 0
@@ -708,7 +707,7 @@ def parse_inventory(account, api_response):
         parsed_incubators)
     log.debug('Total amount in Inventory:' +
               ' {} Items, {} pokemon, {} eggs, {} Incubator'.format(
-                int(parsed_items + item_count), len(account['pokemons']),
+                int(parsed_items), len(account['pokemons']),
                 len(account['eggs']), len(account['incubators'])))
 
 
