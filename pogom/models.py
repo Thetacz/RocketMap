@@ -343,7 +343,7 @@ class Pokemon(BaseModel):
         visible_distance = 200
 
         # Get box of visible distance
-        start = geopy.distance.distance(meters=visible_distance)
+        start = geopy.distance.distance(meters=visible_distance-1)
         sw = start.destination(center, 225).format_decimal()
         sw = [float(s) for s in sw.split(',')]
         ne = start.destination(center, 45).format_decimal()
@@ -1899,8 +1899,6 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
     stopsskipped = 0
     forts = []
     forts_count = 0
-    encountered_pokemon = []
-    encountered_pokemon_ids = []
     wild_pokemon = []
     wild_pokemon_count = 0
     nearby_pokemon = []
@@ -1966,7 +1964,7 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
     ScannedLocation.update_band(scan_loc, now_date)
     just_completed = not done_already and scan_loc['done']
 
-    # Checking if account is blinded
+    # Checking if account is shadowbanned
     if (nearby_pokemon or wild_pokemon) and config['parse_pokemon']:
 
         # Create list of present pokemon IDs for blinded check
@@ -1981,20 +1979,22 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
         # Checking if found only common pokemons
         if len(rare_finds) == 0:
             # Get nearby active pokemons from database
-            encountered_pokemon_ids = Pokemon.get_pokemons_nearby(
-                step_location, now_date)
-
-            for p in encountered_pokemon_ids:
-                if ((p not in nearby_pokemon_ids) and (p not in common_ids)):
-                    missed.append(p)
-
-            if missed:
-                raise Shadowbanned(account, missed, True)
-
             status['nonrares'] += 1
+            if status['nonrares'] >= 3:
+                encountered_pokemon_ids = Pokemon.get_pokemons_nearby(
+                    step_location, now_date + timedelta(seconds=10))
+
+                for p in encountered_pokemon_ids:
+                    if p not in nearby_pokemon_ids and p not in common_ids:
+                        missed.append(p)
+
+                if missed:
+                    raise Shadowbanned(account, missed, True)
+
             if status['nonrares'] >= 20:
                 raise Shadowbanned(account)
-                # reset counter if rares are found
+
+        # reset counter if rares are found
         else:
             status['nonrares'] = 0
 
