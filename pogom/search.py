@@ -1036,9 +1036,10 @@ def search_worker_thread(args, account_queue, account_sets,
                                 sb_file.write('{},{},{}\n'.format(
                                     account['auth_service'],
                                     account['username'],
-                                    account['password']))
-                                # Add some more time for the account to rest
-                        sb_time += 86400
+                                    account['password'],
+                                    sb_time))
+                        # Add 3 days to sleep time if definitely shadowbanned
+                        sb_time += 3600*24*3
 
                     account_failures.append({'account': account,
                                              'last_fail_time': sb_time,
