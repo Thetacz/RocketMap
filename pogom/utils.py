@@ -616,33 +616,33 @@ def get_args():
                               " was " + type_error)
                         sys.exit(1)
 
-
-
-
         if not args.no_pokemon:
-            # Get accounts from shadowbanned.csv file
+            # Get accounts from acc_shadowbanned.csv file
             shadowbanned = []
             num_fields = -1
-            if os.path.isfile('shadowbanned.csv'):
-                with open('shadowbanned.csv', 'r') as f:
+            if os.path.isfile('acc_shadowbanned.csv'):
+                with open('acc_shadowbanned.csv', 'r') as f:
                     for num, line in enumerate(f, 1):
-                        fields = []
-
-                        # First time around populate num_fields with current field
-                        # count.
+                        # First time around populate num_fields with
+                        # current field count.
                         if num_fields < 0:
                             num_fields = line.count(',') + 1
 
-                        csv_input = ['<ptc/google>,<username>,<password>,<timestamp>']
+                        csv_input = ['<ptc/google>,<username>,' +
+                                     '<password>,<timestamp>']
 
-                        # If the number of fields is differend this is not a CSV.
+                        # If the number of fields is different
+                        # this is not a CSV.
                         if num_fields != line.count(',') + 1:
                             print(sys.argv[0] +
-                                  ": Error parsing CSV file on line " + str(num) +
-                                  ". Your file started with the following " +
-                                  "input, '" + csv_input[num_fields] +
+                                  ": Error parsing CSV file on line " +
+                                  str(num) +
+                                  ". Your file started with the" +
+                                  "following input, '" +
+                                  csv_input[num_fields] +
                                   "' but now you gave us '" +
-                                  csv_input[line.count(',') + 1] + "'.")
+                                  csv_input[line.count(',') + 1] +
+                                  "'.")
                             sys.exit(1)
 
                         line = line.strip()
@@ -651,33 +651,36 @@ def get_args():
                         if len(line) == 0 or line.startswith('#'):
                             continue
 
-                        # If number of fields is more than 1 split the line into
-                        # fields and strip them.
+                        # If number of fields is more than 1 split the line
+                        # into fields and strip them.
                         if num_fields == 4:
                             fields = line.split(",")
                             fields = map(str.strip, fields)
-
-                            # add username to shadowbanned if timestamp is less than 3 days ago.
-                            if datetime.strptime(fields[3], '%Y-%m-%d %H:%M:%S.%f') > datetime.now() - timedelta(
-                                days=3):
+                            # add username to shadowbanned if timestamp is
+                            # less than 3 days ago.
+                            if datetime.strptime(fields[3],
+                                                 '%Y-%m-%d %H:%M:%S.%f') > \
+                                    datetime.now() - timedelta(
+                                    days=3):
                                 shadowbanned.append(fields[1])
-                                # otherwise clear it from the file
-
                         else:
-                            print(('Different number of fields in shadowbanned file:' +
-                                   'There should be 4 fields. ' +
+                            print(('Different number of fields in ' +
+                                   'shadowbanned file: There should ' +
+                                   'be 4 fields. ' +
                                    'Found {} fields').format(num_fields))
                             sys.exit(1)
 
-                # Go through accounts and discard shadowbanned ones if scanning pokemons
+                # Go through accounts and discard shadowbanned
+                # if scanning pokemons
                 discarded = []
-                for i, account in enumerate(args.username, 0):
+                for i, account in enumerate(args.username[:], 0):
                     if account in shadowbanned:
                         discarded.append(account)
                         args.username.pop(i)
                         args.password.pop(i)
                         args.auth_service.pop(i)
-                print("Discarded accounts {}. Reason: shadowban.".format(discarded))
+                print("Discarded accounts {}. Reason: shadowban."
+                      .format(discarded))
 
         errors = []
 

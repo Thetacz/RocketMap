@@ -1975,8 +1975,8 @@ def parse_map(args, map_dict, step_location, db_update_queue, wh_update_queue,
 
             # Remove common pokemons from seen
         rare_finds = [p for p in nearby_pokemon_ids if p not in common_ids]
-
         # Checking if found only common pokemons
+
         if len(rare_finds) == 0:
             # Get nearby active pokemons from database
             status['nonrares'] += 1
