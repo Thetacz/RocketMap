@@ -364,13 +364,18 @@ class SpawnScan(BaseScheduler):
         if not self.locations:
             if self.args.no_pokemon:
                 if not self.args.no_gyms:
-                    log.debug('Loading gyms from database')
+                    log.debug('Loading gyms from database.')
                     gyms += Gym.get_gyms_in_hex(self.scan_location,
                                                 self.args.step_limit)
+                    log.debug('Loaded %s gyms from database.' % len(gyms))
+                    # getting last scanned as secs in hour
+                    for gym in gyms:
+                        gym['time'] = gym['time'] % 3600
             else:
-                log.debug('Loading spawn points from database')
+                log.debug('Loading spawn points from database.')
                 spawns += SpawnPoint.get_spawnpoints_in_hex(
                     self.scan_location, self.args.step_limit)
+                log.debug('Loaded %s spawns from database.' % len(spawns))
 
         self.locations = gyms + stops + spawns
 
